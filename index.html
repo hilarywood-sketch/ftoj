@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My trains</title>
+<style>
+  body { background:#fff; color:#14213d; font:16px/1.4 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin:0; padding:16px; }
+  main { max-width:640px; }
+  .journey { border:2px solid #14213d; border-radius:8px; margin-bottom:10px; overflow:hidden; }
+  .journey > button { all:unset; box-sizing:border-box; display:flex; justify-content:space-between; align-items:center;
+                      width:100%; padding:12px 14px; font-weight:600; font-size:17px; cursor:pointer; }
+  .journey > button::after { content:"▸"; transition:transform .15s; }
+  .journey.open > button { background:#14213d; color:#fff; }
+  .journey.open > button::after { transform:rotate(90deg); }
+  .panel { display:none; padding:0 14px 12px; }
+  .journey.open .panel { display:block; }
+  h2 { font-size:16px; margin:14px 0 4px; border-bottom:1px solid #c9d1e3; padding-bottom:4px; }
+  h2 small { font-weight:400; color:#5f6f94; font-size:13px; }
+  table { border-collapse:collapse; width:100%; }
+  td { padding:3px 10px 3px 0; vertical-align:top; }
+  td.due { text-align:right; white-space:nowrap; font-weight:600; padding-right:0; }
+  .line { font-weight:600; }
+  .muted { color:#5f6f94; font-size:13px; }
+  a.nr { display:inline-block; margin:4px 0; color:#14213d; font-weight:600; border:1px solid #c9d1e3; border-radius:6px; padding:6px 10px; text-decoration:none; }
+</style>
+</head>
+<body>
+<main id="journeys"></main>
+<p class="muted" id="updated"></p>
+
+<script>
+// ---------- Journeys ----------
+// Each journey is a list of boards. A board is either:
+//   { name, note, ids:[TfL NaPTAN IDs], keep: a => true/false }   live TfL departures (keep is an optional filter)
+//   { name, note, link:"https://..." }                               National Rail – opens National Rail's live page
+// Optional on live boards: earlier:N, from:"Stop" – show times N minutes earlier than the stop the data comes from.
+// Find IDs at https://api.tfl.gov.uk/StopPoint/Search/<name>, then https://api.tfl.gov.uk/StopPoint/<HUB id>
+const has = (a, text) => (a.platformName || "").includes(text);
+const nr = (from, to) => `https://www.nationalrail.co.uk/live-trains/departures/${from}/${to}/`;
+
+const JOURNEYS = {
+  "Leaving home": [
+    { name:"Abbey Road", note:"DLR, both directions", ids:["940GZZDLABR"] },
+    { name:"West Ham", note:"westbound", ids:["940GZZLUWHM"], keep: a => has(a, "Westbound") }
+  ],
+  "From SELO": [
+    { name:"Penge West", note:"Windrush line northbound", ids:["910GPENEW"], keep: a => a.platformName === "Platform 1" },
+    { name:"Canada Water", note:"Jubilee eastbound", ids:["940GZZLUCWR"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") },
+    { name:"New Beckenham", note:"to London Bridge (National Rail)", link: nr("NBC", "LBG") },
+    { name:"London Bridge", note:"Jubilee eastbound", ids:["940GZZLULNB"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") }
+  ],
+  "From OotC": [
+    { name:"Vauxhall", note:"to Waterloo (National Rail)", link: nr("VXH", "WAT") },
+    { name:"Vauxhall", note:"Victoria line northbound", ids:["940GZZLUVXL"], keep: a => a.lineName === "Victoria" && has(a, "Northbound") },
+    { name:"Waterloo", note:"Jubilee eastbound", ids:["940GZZLUWLO"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") }
+  ],
+  "From Portobello": [
+    { name:"Notting Hill Gate", note:"Central line eastbound", ids:["940GZZLUNHG"], keep: a => a.lineName === "Central" && has(a, "Eastbound") },
+    { name:"Westbourne Park", note:"Hammersmith & City eastbound", ids:["940GZZLUWSP"], keep: a => a.lineName === "Hammersmith & City" && has(a, "Eastbound") },
+    // TfL's Paddington feed misses trains, so use Bond Street (next stop) and estimate Paddington.
+    // Measured Paddington→Bond Street: 3–5 min (typically 4) + 1 min margin = 5 min earlier.
+    { name:"Paddington", note:"Elizabeth line to Shenfield – estimated from Bond Street times, 5 min earlier",
+      ids:["910GBONDST"], earlier:5, from:"Bond St",
+      keep: a => a.platformName === "A" && (a.destinationName || "").includes("Shenfield") }
+  ]
+};
+const ROWS_PER_BOARD = 6;
+const REFRESH_SECONDS = 30;
+
+// ---------- Helpers ----------
+const clean = s => (s || "")
+  .replace(/ (Underground|DLR|Rail) Station$/, "")
+  .replace(/ ELL$/, "");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+async function getArrivals(id) {
+  const r = await fetch(`https://api.tfl.gov.uk/StopPoint/${id}/Arrivals`);
+  if (!r.ok) throw new Error(`${id}: HTTP ${r.status}`);
+  const d = await r.json();
+  return Array.isArray(d) ? d : [];
+}
+
+async function board(b) {
+  const head = `<h2>${esc(b.name)} <small>${esc(b.note || "")}</small></h2>`;
+  if (b.link) return head + `<a class="nr" href="${esc(b.link)}" target="_blank" rel="noopener">National Rail live departures ›</a>`;
+  const shift = (b.earlier || 0) * 60;
+  try {
+    const all = (await Promise.all(b.ids.map(getArrivals))).flat()
+      .filter(b.keep || (() => true))
+      .filter(a => a.timeToStation - shift >= 0);          // drop trains already gone from the estimated stop
+    const seen = new Set();
+    const rows = all
+      .sort((x, y) => x.timeToStation - y.timeToStation)
+      .filter(a => {
+        const k = `${a.vehicleId}|${a.destinationName}|${a.platformName}`;
+        if (seen.has(k)) return false;
+        seen.add(k); return true;
+      })
+      .slice(0, ROWS_PER_BOARD);
+    if (!rows.length) return head + `<p class="muted">No trains shown</p>`;
+    return head + `<table>` + rows.map(a => {
+      const mins = Math.floor((a.timeToStation - shift) / 60);
+      const third = shift
+        ? `${esc(b.from || "")} ${Math.floor(a.timeToStation / 60)} min`
+        : esc((a.platformName || "").replace(/^.*Platform\s*/i, "Plat "));
+      return `<tr>
+        <td class="line">${esc(a.lineName)}</td>
+        <td>${esc(clean(a.destinationName || a.towards))}</td>
+        <td class="muted">${third}</td>
+        <td class="due">${shift ? "≈ " : ""}${mins < 1 ? "due" : mins + " min"}</td>
+      </tr>`;
+    }).join("") + `</table>`;
+  } catch (e) {
+    return head + `<p class="muted">Couldn't load (${esc(e.message)})</p>`;
+  }
+}
+
+// ---------- Expanding list ----------
+// One journey open at a time; tap it again to close. Only the open journey is fetched.
+const names = Object.keys(JOURNEYS);
+let open = names.find(n => "#" + slug(n) === location.hash);
+if (open === undefined) { try { open = localStorage.getItem("journey"); } catch (e) {} }
+if (!JOURNEYS[open]) open = null;
+
+const list = document.getElementById("journeys");
+list.innerHTML = names.map(n => `
+  <section class="journey" data-j="${esc(n)}">
+    <button type="button" aria-expanded="false">${esc(n)}</button>
+    <div class="panel"></div>
+  </section>`).join("");
+
+function show() {
+  list.querySelectorAll(".journey").forEach(s => {
+    const isOpen = s.dataset.j === open;
+    s.classList.toggle("open", isOpen);
+    s.querySelector("button").setAttribute("aria-expanded", isOpen);
+    if (!isOpen) s.querySelector(".panel").innerHTML = "";
+  });
+}
+
+list.addEventListener("click", e => {
+  const btn = e.target.closest(".journey > button");
+  if (!btn) return;
+  const j = btn.parentElement.dataset.j;
+  open = (open === j) ? null : j;
+  try { open ? localStorage.setItem("journey", open) : localStorage.removeItem("journey"); } catch (err) {}
+  history.replaceState(null, "", open ? "#" + slug(open) : location.pathname);
+  show();
+  if (open) {
+    btn.parentElement.querySelector(".panel").innerHTML = `<p class="muted">Loading…</p>`;
+    refresh();
+  } else {
+    document.getElementById("updated").textContent = "";
+  }
+});
+
+let busy = 0;
+async function refresh() {
+  if (!open) return;
+  const ticket = ++busy, showing = open;
+  const html = await Promise.all(JOURNEYS[showing].map(board));
+  if (ticket !== busy || showing !== open) return;   // user has switched since
+  list.querySelector(`.journey[data-j="${CSS.escape(showing)}"] .panel`).innerHTML = html.join("");
+  document.getElementById("updated").textContent =
+    "Updated " + new Date().toLocaleTimeString("en-GB") + " · TfL Unified API · refreshes every " + REFRESH_SECONDS + "s";
+}
+
+show();
+if (open) {
+  list.querySelector(`.journey[data-j="${CSS.escape(open)}"] .panel`).innerHTML = `<p class="muted">Loading…</p>`;
+  refresh();
+}
+setInterval(refresh, REFRESH_SECONDS * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+</script>
+</body>
+</html>
