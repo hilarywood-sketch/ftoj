@@ -22,6 +22,13 @@
   td.due { text-align:right; white-space:nowrap; font-weight:600; padding-right:0; }
   .line { font-weight:600; }
   .muted { color:#5f6f94; font-size:13px; }
+  .status { font-size:13px; margin:2px 0 6px; }
+  .status.ok { color:#2e6b3a; }
+  .status.ok::before { content:"● "; }
+  .status.warn, .status.bad, .status.info { padding:6px 8px; border-radius:4px; border-left:4px solid; }
+  .status.warn { background:#fff6e0; border-color:#c77700; }
+  .status.bad  { background:#fde8e8; border-color:#b3261e; }
+  .status.info { background:#eef1f7; border-color:#5f6f94; }
   a.nr { display:inline-block; margin:4px 0; color:#14213d; font-weight:600; border:1px solid #c9d1e3; border-radius:6px; padding:6px 10px; text-decoration:none; }
 </style>
 </head>
@@ -33,38 +40,42 @@
 // ---------- Journeys ----------
 // Each journey is a list of boards. A board is either:
 //   { name, note, ids:[TfL NaPTAN IDs], keep: a => true/false }   live TfL departures (keep is an optional filter)
-//   { name, note, link:"https://..." }                               National Rail – opens National Rail's live page
+//   { name, note, rail:{from:"CRS", to:"CRS"} }                        National Rail via your Cloudflare Worker (link only if RAIL_WORKER is blank)
 // Optional on live boards: earlier:N, from:"Stop" – show times N minutes earlier than the stop the data comes from.
+// lines:[TfL line IDs] – show line status (IDs: dlr, district, hammersmith-city, jubilee, windrush, victoria, central, elizabeth, …)
 // Find IDs at https://api.tfl.gov.uk/StopPoint/Search/<name>, then https://api.tfl.gov.uk/StopPoint/<HUB id>
 const has = (a, text) => (a.platformName || "").includes(text);
 const nr = (from, to) => `https://www.nationalrail.co.uk/live-trains/departures/${from}/${to}/`;
 
 const JOURNEYS = {
   "Leaving home": [
-    { name:"Abbey Road", note:"DLR, both directions", ids:["940GZZDLABR"] },
-    { name:"West Ham", note:"westbound", ids:["940GZZLUWHM"], keep: a => has(a, "Westbound") }
+    { name:"Abbey Road", note:"DLR, both directions", ids:["940GZZDLABR"], lines:["dlr"] },
+    { name:"West Ham", note:"westbound", ids:["940GZZLUWHM"], lines:["district","hammersmith-city","jubilee"], keep: a => has(a, "Westbound") }
   ],
   "From SELO": [
     { name:"St George's Church (stop F)", note:"227 towards Crystal Palace", ids:["490012691F"], lines:["227"], keep: a => a.lineName === "227" },
-    { name:"Penge West", note:"Windrush line northbound", ids:["910GPENEW"], keep: a => a.platformName === "Platform 1" },
-    { name:"New Beckenham", note:"to London Bridge (National Rail)", link: nr("NBC", "LBG") },
-    { name:"London Bridge", note:"Jubilee eastbound", ids:["940GZZLULNB"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") }
+    { name:"Penge West", note:"Windrush line northbound", ids:["910GPENEW"], lines:["windrush"], keep: a => a.platformName === "Platform 1" },
+    { name:"Canada Water", note:"Jubilee eastbound", ids:["940GZZLUCWR"], lines:["jubilee"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") },
+    { name:"New Beckenham", note:"to London Bridge (National Rail)", rail:{ from:"NBC", to:"LBG" } },
+    { name:"London Bridge", note:"Jubilee eastbound", ids:["940GZZLULNB"], lines:["jubilee"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") }
   ],
   "From OotC": [
-    { name:"Vauxhall", note:"to Waterloo (National Rail)", link: nr("VXH", "WAT") },
-    { name:"Vauxhall", note:"Victoria line northbound", ids:["940GZZLUVXL"], keep: a => a.lineName === "Victoria" && has(a, "Northbound") },
-    { name:"Waterloo", note:"Jubilee eastbound", ids:["940GZZLUWLO"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") }
+    { name:"Vauxhall", note:"to Waterloo (National Rail)", rail:{ from:"VXH", to:"WAT" } },
+    { name:"Vauxhall", note:"Victoria line northbound", ids:["940GZZLUVXL"], lines:["victoria"], keep: a => a.lineName === "Victoria" && has(a, "Northbound") },
+    { name:"Waterloo", note:"Jubilee eastbound", ids:["940GZZLUWLO"], lines:["jubilee"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") }
   ],
   "From Portobello": [
-    { name:"Notting Hill Gate", note:"Central line eastbound", ids:["940GZZLUNHG"], keep: a => a.lineName === "Central" && has(a, "Eastbound") },
-    { name:"Westbourne Park", note:"Hammersmith & City eastbound", ids:["940GZZLUWSP"], keep: a => a.lineName === "Hammersmith & City" && has(a, "Eastbound") },
+    { name:"Notting Hill Gate", note:"Central line eastbound", ids:["940GZZLUNHG"], lines:["central"], keep: a => a.lineName === "Central" && has(a, "Eastbound") },
+    { name:"Westbourne Park", note:"Hammersmith & City eastbound", ids:["940GZZLUWSP"], lines:["hammersmith-city"], keep: a => a.lineName === "Hammersmith & City" && has(a, "Eastbound") },
     // TfL's Paddington feed misses trains, so use Bond Street (next stop) and estimate Paddington.
     // Measured Paddington→Bond Street: 3–5 min (typically 4) + 1 min margin = 5 min earlier.
     { name:"Paddington", note:"Elizabeth line to Shenfield – estimated from Bond Street times, 5 min earlier",
-      ids:["910GBONDST"], earlier:5, from:"Bond St",
+      ids:["910GBONDST"], lines:["elizabeth"], earlier:5, from:"Bond St",
       keep: a => a.platformName === "A" && (a.destinationName || "").includes("Shenfield") }
   ]
 };
+// Your Cloudflare Worker address, e.g. "https://my-trains.yourname.workers.dev" – leave "" to show links only.
+const RAIL_WORKER = "https://usefultrains.hilary-wood.workers.dev";
 const ROWS_PER_BOARD = 6;
 const REFRESH_SECONDS = 30;
 
@@ -82,12 +93,45 @@ async function getArrivals(id) {
   return Array.isArray(d) ? d : [];
 }
 
-async function board(b) {
-  const head = `<h2>${esc(b.name)} <small>${esc(b.note || "")}</small></h2>`;
-  if (b.link) return head + `<a class="nr" href="${esc(b.link)}" target="_blank" rel="noopener">National Rail live departures ›</a>`;
+// Line status: one call for all lines in the open journey. Returns { lineId: {name, statuses:[...]} } or null on failure.
+async function getStatus(lineIds) {
+  if (!lineIds.length) return {};
+  try {
+    const r = await fetch(`https://api.tfl.gov.uk/Line/${lineIds.join(",")}/Status`);
+    if (!r.ok) return null;
+    const out = {};
+    for (const l of await r.json()) out[l.id] = { name: l.name, statuses: l.lineStatuses || [] };
+    return out;
+  } catch (e) { return null; }
+}
+
+// TfL severity codes: 10 Good Service, 18 No Issues, 19 Information, 20 Service Closed; lower numbers are problems.
+function statusHtml(b, st) {
+  if (!b.lines) return "";
+  if (!st) return `<p class="status muted">Line status unavailable</p>`;
+  const issues = [];
+  for (const id of b.lines) {
+    const l = st[id]; if (!l) continue;
+    for (const s of l.statuses) {
+      if ([10, 18].includes(s.statusSeverity)) continue;
+      const cls = s.statusSeverity === 20 || s.statusSeverity === 19 ? "info" : s.statusSeverity <= 6 ? "bad" : "warn";
+      const reason = (s.reason || "").replace(/^[^:]{1,40}:\s*/, "");   // drop the "District Line:" prefix
+      issues.push(`<div class="status ${cls}"><b>${esc(l.name)}: ${esc(s.statusSeverityDescription)}</b>${reason ? " – " + esc(reason) : ""}</div>`);
+    }
+  }
+  return issues.length ? issues.join("") : `<p class="status ok">Good service</p>`;
+}
+
+async function board(b, statusPromise) {
+  // Start the arrivals request before waiting for status, so both run at once.
+  const arrivals = b.ids ? Promise.all(b.ids.map(getArrivals)).then(v => ({ v }), e => ({ e })) : null;
+  const head = `<h2>${esc(b.name)} <small>${esc(b.note || "")}</small></h2>` + statusHtml(b, await statusPromise);
+  if (b.rail) return head + await railBoard(b.rail);
   const shift = (b.earlier || 0) * 60;
   try {
-    const all = (await Promise.all(b.ids.map(getArrivals))).flat()
+    const res = await arrivals;
+    if (res.e) throw res.e;
+    const all = res.v.flat()
       .filter(b.keep || (() => true))
       .filter(a => a.timeToStation - shift >= 0);          // drop trains already gone from the estimated stop
     const seen = new Set();
@@ -114,6 +158,47 @@ async function board(b) {
     }).join("") + `</table>`;
   } catch (e) {
     return head + `<p class="muted">Couldn't load (${esc(e.message)})</p>`;
+  }
+}
+
+// National Rail (Darwin) via the Worker. Field names follow the LDBWS REST JSON.
+async function railBoard({ from, to }) {
+  const link = `<a class="nr" href="${nr(from, to)}" target="_blank" rel="noopener">National Rail live departures ›</a>`;
+  if (!RAIL_WORKER) return link;
+  try {
+    const r = await fetch(`${RAIL_WORKER}/?from=${from}&to=${to}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    const msgs = (d.nrccMessages || []).map(m => (m.Value || m.value || "").replace(/<[^>]+>/g, "").trim()).filter(Boolean);
+    const msgHtml = msgs.map(m => `<div class="status warn">${esc(m)}</div>`).join("");
+    const svcs = d.trainServices || [];
+    if (!svcs.length) return msgHtml + `<p class="muted">No trains shown</p>` + link;
+    const now = new Date();
+    const minsTo = hhmm => {                      // minutes from now to a "HH:MM" UK time (handles midnight)
+      const [h, m] = hhmm.split(":").map(Number);
+      let diff = (h * 60 + m) - (now.getHours() * 60 + now.getMinutes());
+      if (diff < -720) diff += 1440;
+      return diff;
+    };
+    const whenOf = s => /^\d\d:\d\d$/.test(s.etd || "") ? s.etd : s.std;   // expected time if late, else scheduled
+    svcs.sort((x, y) => minsTo(whenOf(x)) - minsTo(whenOf(y)));          // order by when they'll actually leave
+    const rows = svcs.slice(0, ROWS_PER_BOARD).map(s => {
+      const dest = (s.destination || []).map(x => x.locationName).join(" & ");
+      const etd = s.etd || "";
+      const cancelled = s.isCancelled || etd === "Cancelled";
+      const mins = minsTo(whenOf(s));
+      const due = cancelled ? "Cancelled" : (mins < 1 ? "due" : mins + " min");
+      const info = cancelled ? "" : (etd === "On time" ? "On time" : etd === "Delayed" ? "Delayed" : `exp ${etd}`);
+      return `<tr>
+        <td class="line">${esc(s.std)}</td>
+        <td>${esc(dest)}${s.platform ? ` <span class="muted">Plat ${esc(s.platform)}</span>` : ""}</td>
+        <td class="muted">${esc(info)}</td>
+        <td class="due">${esc(due)}</td>
+      </tr>`;
+    }).join("");
+    return msgHtml + `<table>${rows}</table>`;
+  } catch (e) {
+    return `<p class="muted">Couldn't load live times (${esc(e.message)})</p>` + link;
   }
 }
 
@@ -160,7 +245,9 @@ let busy = 0;
 async function refresh() {
   if (!open) return;
   const ticket = ++busy, showing = open;
-  const html = await Promise.all(JOURNEYS[showing].map(board));
+  const lineIds = [...new Set(JOURNEYS[showing].flatMap(b => b.lines || []))];
+  const st = getStatus(lineIds);
+  const html = await Promise.all(JOURNEYS[showing].map(b => board(b, st)));
   if (ticket !== busy || showing !== open) return;   // user has switched since
   list.querySelector(`.journey[data-j="${CSS.escape(showing)}"] .panel`).innerHTML = html.join("");
   document.getElementById("updated").textContent =
