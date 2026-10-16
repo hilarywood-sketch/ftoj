@@ -60,8 +60,8 @@ const JOURNEYS = {
     { name:"West Ham", note:"westbound", ids:["940GZZLUWHM"], lines:["district","hammersmith-city","jubilee"], keep: a => has(a, "Westbound") }
   ],
   "From SELO": [
+    { name:"St George's Church (stop F)", note:"227 towards Crystal Palace", ids:["490012691F"], lines:["227"], keep: a => a.lineName === "227" },
     { name:"Penge West", note:"Windrush line northbound", ids:["910GPENEW"], lines:["windrush"], keep: a => a.platformName === "Platform 1" },
-    { name:"Canada Water", note:"Jubilee eastbound", ids:["940GZZLUCWR"], lines:["jubilee"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") },
     { name:"New Beckenham", note:"to London Bridge (National Rail)", rail:{ from:"NBC", to:"LBG" } },
     { name:"London Bridge", note:"Jubilee eastbound", ids:["940GZZLULNB"], lines:["jubilee"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") }
   ],
