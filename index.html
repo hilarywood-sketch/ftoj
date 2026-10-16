@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>My trains</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#14213d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Trains">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>
   body { background:#fff; color:#14213d; font:16px/1.4 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin:0; padding:16px; }
   main { max-width:640px; }
@@ -53,8 +60,8 @@ const JOURNEYS = {
     { name:"West Ham", note:"westbound", ids:["940GZZLUWHM"], lines:["district","hammersmith-city","jubilee"], keep: a => has(a, "Westbound") }
   ],
   "From SELO": [
-    { name:"St George's Church (stop F)", note:"227 towards Crystal Palace", ids:["490012691F"], lines:["227"], keep: a => a.lineName === "227" },
     { name:"Penge West", note:"Windrush line northbound", ids:["910GPENEW"], lines:["windrush"], keep: a => a.platformName === "Platform 1" },
+    { name:"Canada Water", note:"Jubilee eastbound", ids:["940GZZLUCWR"], lines:["jubilee"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") },
     { name:"New Beckenham", note:"to London Bridge (National Rail)", rail:{ from:"NBC", to:"LBG" } },
     { name:"London Bridge", note:"Jubilee eastbound", ids:["940GZZLULNB"], lines:["jubilee"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") }
   ],
@@ -260,6 +267,9 @@ if (open) {
 }
 setInterval(refresh, REFRESH_SECONDS * 1000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+
+// Installable app support (see sw.js)
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
 </html>
