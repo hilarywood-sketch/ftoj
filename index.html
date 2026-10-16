@@ -63,12 +63,14 @@ const JOURNEYS = {
     { name:"St George's Church (stop F)", note:"227 towards Crystal Palace", ids:["490012691F"], lines:["227"], keep: a => a.lineName === "227" },
     { name:"Penge West", note:"Windrush line northbound", ids:["910GPENEW"], lines:["windrush"], keep: a => a.platformName === "Platform 1" },
     { name:"New Beckenham", note:"to London Bridge (National Rail)", rail:{ from:"NBC", to:"LBG" } },
-    { name:"London Bridge", note:"Jubilee eastbound", ids:["940GZZLULNB"], lines:["jubilee"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") }
+    { name:"London Bridge", note:"Jubilee eastbound", ids:["940GZZLULNB"], lines:["jubilee"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") },
+    { name:"Whitechapel", note:"District & H&C eastbound", ids:["940GZZLUWPL"], lines:["district","hammersmith-city"], keep: a => ["District","Hammersmith & City"].includes(a.lineName) && has(a, "Eastbound") }
   ],
   "From OotC": [
     { name:"Vauxhall", note:"to Waterloo (National Rail)", rail:{ from:"VXH", to:"WAT" } },
     { name:"Vauxhall", note:"Victoria line northbound", ids:["940GZZLUVXL"], lines:["victoria"], keep: a => a.lineName === "Victoria" && has(a, "Northbound") },
-    { name:"Waterloo", note:"Jubilee eastbound", ids:["940GZZLUWLO"], lines:["jubilee"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") }
+    { name:"Waterloo", note:"Jubilee eastbound", ids:["940GZZLUWLO"], lines:["jubilee"], keep: a => a.lineName === "Jubilee" && has(a, "Eastbound") },
+    { name:"Victoria", note:"District eastbound", ids:["940GZZLUVIC"], lines:["district"], keep: a => a.lineName === "District" && has(a, "Eastbound") }
   ],
   "From Portobello": [
     { name:"Notting Hill Gate", note:"Central line eastbound", ids:["940GZZLUNHG"], lines:["central"], keep: a => a.lineName === "Central" && has(a, "Eastbound") },
